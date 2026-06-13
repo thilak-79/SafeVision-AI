@@ -3,7 +3,18 @@ import cv2
 import os
 import time
 import csv
+import requests
 from datetime import datetime
+from dotenv import load_dotenv
+
+# =====================================================
+# LOAD ENVIRONMENT VARIABLES
+# =====================================================
+
+load_dotenv()
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # =====================================================
 # SAFEVISION AI SETTINGS
@@ -46,17 +57,63 @@ CSV_LOG_PATH = "alerts/alert_log.csv"
 if not os.path.exists(CSV_LOG_PATH):
     with open(CSV_LOG_PATH, mode="w", newline="") as file:
         writer = csv.writer(file)
-        writer.writerow(["timestamp", "alert_type", "confidence", "screenshot_path"])
+        writer.writerow(["timestamp", "alert_type", "confidence_or_count", "screenshot_path"])
 
 
 # =====================================================
-# HELPER FUNCTIONS
+# TELEGRAM ALERT FUNCTION
+# =====================================================
+
+def send_telegram_alert(alert_type, confidence, screenshot_path):
+    """
+    Send Telegram alert message with screenshot.
+    """
+
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Telegram token or chat ID not found. Skipping Telegram alert.")
+        return
+
+    message = (
+        f"🚨 SafeVision AI Alert\n\n"
+        f"Type: {alert_type}\n"
+        f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"Confidence / Count: {confidence}\n"
+    )
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+
+    try:
+        with open(screenshot_path, "rb") as image:
+            files = {
+                "photo": image
+            }
+
+            data = {
+                "chat_id": TELEGRAM_CHAT_ID,
+                "caption": message
+            }
+
+            response = requests.post(url, data=data, files=files, timeout=10)
+
+        if response.status_code == 200:
+            print("Telegram alert sent successfully.")
+        else:
+            print("Failed to send Telegram alert:", response.text)
+
+    except Exception as e:
+        print("Telegram alert error:", e)
+
+
+# =====================================================
+# HELPER FUNCTION: SAVE ALERT
 # =====================================================
 
 def save_alert(frame, alert_type, confidence):
     """
-    Save screenshot and write alert details to CSV file.
+    Save screenshot, write alert details to CSV file,
+    and send Telegram alert.
     """
+
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     safe_alert_name = alert_type.lower().replace(" ", "_")
@@ -76,6 +133,9 @@ def save_alert(frame, alert_type, confidence):
         ])
 
     print(f"{alert_type} alert saved: {screenshot_path}")
+
+    # Send Telegram alert with screenshot
+    send_telegram_alert(alert_type, round(confidence, 2), screenshot_path)
 
 
 # =====================================================
@@ -169,7 +229,7 @@ while True:
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
 
                 # Foot-point detection
-                # This is better for CCTV because it checks where the person is standing
+                # Better for CCTV because it checks where the person is standing
                 foot_x = (x1 + x2) // 2
                 foot_y = y2
 

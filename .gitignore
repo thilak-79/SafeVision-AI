@@ -1,8 +1,6 @@
+.env
 venv/
 __pycache__/
 *.pyc
-.env
-.vscode/
-
 alerts/screenshots/
 alerts/alert_log.csv
