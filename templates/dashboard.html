@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SafeVision AI Dashboard</title>
+    <!-- Use Outfit font for a modern and clean look -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo-container">
+                <div class="pulse-dot"></div>
+                <h1>SafeVision AI</h1>
+            </div>
+            <p class="subtitle">Real-time Video Analytics & Threat Detection</p>
+        </header>
+
+        <main>
+            <section class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon alert-icon">🔔</div>
+                    <div class="stat-content">
+                        <h3>Total Alerts</h3>
+                        <p class="stat-number">{{ total_alerts }}</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon restricted-icon">🚫</div>
+                    <div class="stat-content">
+                        <h3>Restricted Area</h3>
+                        <p class="stat-number">{{ restricted_count }}</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon crowd-icon">👥</div>
+                    <div class="stat-content">
+                        <h3>Crowd Detected</h3>
+                        <p class="stat-number">{{ crowd_count }}</p>
+                    </div>
+                </div>
+            </section>
+
+            <div class="dashboard-content">
+                <section class="latest-alert card">
+                    <h2>Latest Alert Capture</h2>
+                    <div class="image-container">
+                        {% if latest_screenshot %}
+                            <!-- Since our app serves from /alerts/<path> and the CSV path is like 'alerts/screenshots/...' -->
+                            <img src="/{{ latest_screenshot }}" alt="Latest Alert Screenshot">
+                        {% else %}
+                            <div class="no-image">No alerts detected yet</div>
+                        {% endif %}
+                    </div>
+                </section>
+
+                <section class="alert-history card">
+                    <h2>Alert History</h2>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Alert Type</th>
+                                    <th>Confidence / Count</th>
+                                    <th>Screenshot</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for alert in alerts %}
+                                <tr>
+                                    <td>{{ alert.timestamp }}</td>
+                                    <td>
+                                        <span class="badge {{ 'badge-restricted' if alert.alert_type == 'Restricted Area' else 'badge-crowd' }}">
+                                            {{ alert.alert_type }}
+                                        </span>
+                                    </td>
+                                    <td>{{ alert.confidence }}</td>
+                                    <td>
+                                        <a href="/{{ alert.screenshot_path }}" target="_blank" class="view-btn">View Image</a>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="4" class="text-center">No alerts logged yet.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+</body>
+</html>

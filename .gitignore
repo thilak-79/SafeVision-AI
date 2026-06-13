@@ -2,5 +2,7 @@ venv/
 __pycache__/
 *.pyc
 .env
-.DS_Store
 .vscode/
+
+alerts/screenshots/
+alerts/alert_log.csv
