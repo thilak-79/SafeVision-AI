@@ -45,7 +45,7 @@ LOITERING_TIME_LIMIT = 10  # seconds
 # =====================================================
 
 ENABLE_SOUND_ALERTS = True
-SOUND_COOLDOWN_SECONDS = 10
+SOUND_COOLDOWN_SECONDS = 15
 sound_muted = False
 
 SOUND_FILES = {
