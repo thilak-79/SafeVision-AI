@@ -4,22 +4,42 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SafeVision AI Dashboard</title>
-    <!-- Use Outfit font for a modern and clean look -->
+
+    <!-- Google Font -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body>
     <div class="container">
+
+        <!-- HEADER -->
         <header>
             <div class="logo-container">
                 <div class="pulse-dot"></div>
                 <h1>SafeVision AI</h1>
             </div>
+
             <p class="subtitle">Real-time Video Analytics & Threat Detection</p>
+
+            <div class="status-container">
+                <span class="status-badge online-badge">
+                    <span class="status-dot"></span> System Online
+                </span>
+
+                <span class="status-badge source-badge">
+                    📸 Source: {{ camera_source }}
+                </span>
+            </div>
         </header>
 
         <main>
+
+            <!-- STATS CARDS -->
             <section class="stats-grid">
+
                 <div class="stat-card">
                     <div class="stat-icon alert-icon">🔔</div>
                     <div class="stat-content">
@@ -27,6 +47,7 @@
                         <p class="stat-number">{{ total_alerts }}</p>
                     </div>
                 </div>
+
                 <div class="stat-card">
                     <div class="stat-icon restricted-icon">🚫</div>
                     <div class="stat-content">
@@ -34,6 +55,7 @@
                         <p class="stat-number">{{ restricted_count }}</p>
                     </div>
                 </div>
+
                 <div class="stat-card">
                     <div class="stat-icon crowd-icon">👥</div>
                     <div class="stat-content">
@@ -41,14 +63,26 @@
                         <p class="stat-number">{{ crowd_count }}</p>
                     </div>
                 </div>
+
+                <div class="stat-card">
+                    <div class="stat-icon loitering-icon">⏱️</div>
+                    <div class="stat-content">
+                        <h3>Loitering Alerts</h3>
+                        <p class="stat-number">{{ loitering_count }}</p>
+                    </div>
+                </div>
+
             </section>
 
+            <!-- DASHBOARD CONTENT -->
             <div class="dashboard-content">
+
+                <!-- LATEST ALERT IMAGE -->
                 <section class="latest-alert card">
                     <h2>Latest Alert Capture</h2>
+
                     <div class="image-container">
                         {% if latest_screenshot %}
-                            <!-- Since our app serves from /alerts/<path> and the CSV path is like 'alerts/screenshots/...' -->
                             <img src="/{{ latest_screenshot }}" alt="Latest Alert Screenshot">
                         {% else %}
                             <div class="no-image">No alerts detected yet</div>
@@ -56,8 +90,10 @@
                     </div>
                 </section>
 
+                <!-- ALERT HISTORY TABLE -->
                 <section class="alert-history card">
-                    <h2>Alert History</h2>
+                    <h2>Latest Alert History</h2>
+
                     <div class="table-container">
                         <table>
                             <thead>
@@ -68,29 +104,66 @@
                                     <th>Screenshot</th>
                                 </tr>
                             </thead>
+
                             <tbody>
                                 {% for alert in alerts %}
                                 <tr>
                                     <td>{{ alert.timestamp }}</td>
+
                                     <td>
-                                        <span class="badge {{ 'badge-restricted' if alert.alert_type == 'Restricted Area' else 'badge-crowd' }}">
-                                            {{ alert.alert_type }}
-                                        </span>
+                                        {% if alert.alert_type == "Restricted Area" %}
+                                            <span class="badge badge-restricted">
+                                                {{ alert.alert_type }}
+                                            </span>
+                                        {% elif alert.alert_type == "Crowd" %}
+                                            <span class="badge badge-crowd">
+                                                {{ alert.alert_type }}
+                                            </span>
+                                        {% elif alert.alert_type == "Loitering" %}
+                                            <span class="badge badge-loitering">
+                                                {{ alert.alert_type }}
+                                            </span>
+                                        {% else %}
+                                            <span class="badge">
+                                                {{ alert.alert_type }}
+                                            </span>
+                                        {% endif %}
                                     </td>
-                                    <td>{{ alert.confidence }}</td>
+
                                     <td>
-                                        <a href="/{{ alert.screenshot_path }}" target="_blank" class="view-btn">View Image</a>
+                                        {% if alert.confidence_or_count %}
+                                            {{ alert.confidence_or_count }}
+                                        {% elif alert.confidence %}
+                                            {{ alert.confidence }}
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+
+                                    <td>
+                                        {% if alert.screenshot_path %}
+                                            <a href="/{{ alert.screenshot_path }}" target="_blank" class="view-btn">
+                                                View Image
+                                            </a>
+                                        {% else %}
+                                            No Image
+                                        {% endif %}
                                     </td>
                                 </tr>
+
                                 {% else %}
                                 <tr>
-                                    <td colspan="4" class="text-center">No alerts logged yet.</td>
+                                    <td colspan="4" class="text-center">
+                                        No alerts logged yet.
+                                    </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
+
                         </table>
                     </div>
                 </section>
+
             </div>
         </main>
     </div>

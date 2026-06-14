@@ -4,6 +4,8 @@ import os
 import time
 import csv
 import requests
+import pygame
+import threading
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -20,55 +22,109 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 # SAFEVISION AI SETTINGS
 # =====================================================
 
-# Use 0 for webcam
 SOURCE = 0
-
-# Use this for CCTV MP4 footage
 # SOURCE = "cctv.mp4"
 
 MODEL_PATH = "yolo11n.pt"
 
-# Restricted area coordinates
-# x1, y1 = top-left corner
-# x2, y2 = bottom-right corner
-zone_x1, zone_y1 = 600, 100
-zone_x2, zone_y2 = 1000, 500
+# Restricted area - right bottom area
+zone_x1, zone_y1 = 930, 400
+zone_x2, zone_y2 = 1270, 710
 
-# YOLO confidence limit
 CONFIDENCE_LIMIT = 0.65
+CROWD_LIMIT = 5
 
-# Crowd detection threshold
-# For your room demo, use 2 or 3
-# For real CCTV, use 5 or more
-CROWD_LIMIT = 3
+# Alert cooldown for screenshot + CSV + Telegram
+cooldown_seconds = 3
 
-# Alert cooldown in seconds
-cooldown_seconds = 5
+# Loitering settings
+LOITERING_TIME_LIMIT = 10  # seconds
+
+# =====================================================
+# SOUND ALERT SETTINGS
+# =====================================================
+
+ENABLE_SOUND_ALERTS = True
+SOUND_COOLDOWN_SECONDS = 10
+sound_muted = False
+
+SOUND_FILES = {
+    "Restricted Area": "audio/high.wav",
+    "Crowd": "audio/medium.wav",
+    "Loitering": "audio/critical.wav"
+}
+
+last_sound_times = {
+    "Restricted Area": 0,
+    "Crowd": 0,
+    "Loitering": 0
+}
 
 # =====================================================
 # FOLDERS AND LOG FILE
 # =====================================================
 
 os.makedirs("alerts/screenshots", exist_ok=True)
+os.makedirs("audio", exist_ok=True)
 
 CSV_LOG_PATH = "alerts/alert_log.csv"
 
-# Create CSV file with headings if it does not exist
 if not os.path.exists(CSV_LOG_PATH):
     with open(CSV_LOG_PATH, mode="w", newline="") as file:
         writer = csv.writer(file)
         writer.writerow(["timestamp", "alert_type", "confidence_or_count", "screenshot_path"])
 
+# =====================================================
+# SOUND ALERT SETUP
+# =====================================================
+
+try:
+    pygame.mixer.init()
+    print("Sound system initialized.")
+except Exception as e:
+    print("Sound system error:", e)
+    ENABLE_SOUND_ALERTS = False
+
 
 # =====================================================
-# TELEGRAM ALERT FUNCTION
+# SOUND ALERT FUNCTION
+# =====================================================
+
+def play_alert_sound(alert_type):
+    global sound_muted
+
+    if not ENABLE_SOUND_ALERTS or sound_muted:
+        return
+
+    current_time = time.time()
+
+    if current_time - last_sound_times.get(alert_type, 0) < SOUND_COOLDOWN_SECONDS:
+        return
+
+    sound_path = SOUND_FILES.get(alert_type)
+
+    if not sound_path or not os.path.exists(sound_path):
+        print(f"Sound file not found for {alert_type}: {sound_path}")
+        return
+
+    def play_sound():
+        try:
+            sound = pygame.mixer.Sound(sound_path)
+            sound.set_volume(0.8)
+            sound.play()
+        except Exception as e:
+            print("Sound play error:", e)
+
+    threading.Thread(target=play_sound, daemon=True).start()
+
+    last_sound_times[alert_type] = current_time
+
+
+# =====================================================
+# TELEGRAM ALERT
 # =====================================================
 
 def send_telegram_alert(alert_type, confidence, screenshot_path):
-    """
-    Send Telegram alert message with screenshot.
-    """
-
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("Telegram token or chat ID not found. Skipping Telegram alert.")
         return
@@ -84,10 +140,7 @@ def send_telegram_alert(alert_type, confidence, screenshot_path):
 
     try:
         with open(screenshot_path, "rb") as image:
-            files = {
-                "photo": image
-            }
-
+            files = {"photo": image}
             data = {
                 "chat_id": TELEGRAM_CHAT_ID,
                 "caption": message
@@ -105,24 +158,17 @@ def send_telegram_alert(alert_type, confidence, screenshot_path):
 
 
 # =====================================================
-# HELPER FUNCTION: SAVE ALERT
+# SAVE ALERT
 # =====================================================
 
 def save_alert(frame, alert_type, confidence):
-    """
-    Save screenshot, write alert details to CSV file,
-    and send Telegram alert.
-    """
-
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     safe_alert_name = alert_type.lower().replace(" ", "_")
     screenshot_path = f"alerts/screenshots/{safe_alert_name}_{timestamp}.jpg"
 
-    # Save screenshot
     cv2.imwrite(screenshot_path, frame)
 
-    # Save alert details to CSV
     with open(CSV_LOG_PATH, mode="a", newline="") as file:
         writer = csv.writer(file)
         writer.writerow([
@@ -134,7 +180,10 @@ def save_alert(frame, alert_type, confidence):
 
     print(f"{alert_type} alert saved: {screenshot_path}")
 
-    # Send Telegram alert with screenshot
+    # Play sound alert
+    play_alert_sound(alert_type)
+
+    # Send Telegram alert
     send_telegram_alert(alert_type, round(confidence, 2), screenshot_path)
 
 
@@ -145,12 +194,11 @@ def save_alert(frame, alert_type, confidence):
 model = YOLO(MODEL_PATH)
 
 # =====================================================
-# OPEN WEBCAM OR CCTV MP4
+# OPEN WEBCAM / VIDEO
 # =====================================================
 
 cap = cv2.VideoCapture(SOURCE)
 
-# If using webcam, set resolution
 if SOURCE == 0:
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
@@ -167,11 +215,15 @@ window_name = "SafeVision AI - MVP"
 cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
-# Separate cooldown timers for each alert type
+# Cooldown timers
 last_alert_times = {
     "Restricted Area": 0,
-    "Crowd": 0
+    "Crowd": 0,
+    "Loitering": 0
 }
+
+# Loitering timer
+restricted_start_time = None
 
 # =====================================================
 # MAIN LOOP
@@ -184,8 +236,6 @@ while True:
         print("Video ended or cannot read frame")
         break
 
-    # Detect only persons
-    # COCO class 0 = person
     results = model(
         frame,
         classes=[0],
@@ -216,7 +266,10 @@ while True:
     restricted_alert = False
     max_restricted_confidence = 0
 
-    # Process detections
+    # =====================================================
+    # PROCESS PERSON DETECTIONS
+    # =====================================================
+
     for result in results:
         for box in result.boxes:
             cls_id = int(box.cls[0])
@@ -225,15 +278,12 @@ while True:
             if cls_id == 0:
                 person_count += 1
 
-                # Person bounding box
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
 
-                # Foot-point detection
-                # Better for CCTV because it checks where the person is standing
+                # Foot point
                 foot_x = (x1 + x2) // 2
                 foot_y = y2
 
-                # Check if foot point is inside restricted area
                 inside_zone = (
                     zone_x1 < foot_x < zone_x2 and
                     zone_y1 < foot_y < zone_y2
@@ -246,10 +296,8 @@ while True:
                     restricted_alert = True
                     max_restricted_confidence = max(max_restricted_confidence, confidence)
 
-                # Draw person box
                 cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, 2)
 
-                # Draw label
                 label = f"Person {confidence:.2f}"
                 cv2.putText(
                     frame,
@@ -261,7 +309,6 @@ while True:
                     2
                 )
 
-                # Draw foot point
                 cv2.circle(frame, (foot_x, foot_y), 6, box_color, -1)
 
     # =====================================================
@@ -270,7 +317,6 @@ while True:
 
     crowd_alert = person_count >= CROWD_LIMIT
 
-    # Show person count
     cv2.putText(
         frame,
         f"Persons: {person_count}",
@@ -282,10 +328,39 @@ while True:
     )
 
     # =====================================================
-    # ALERT HANDLING
+    # LOITERING DETECTION
     # =====================================================
 
     current_time = time.time()
+
+    loitering_alert = False
+    loitering_duration = 0
+
+    if restricted_alert:
+        if restricted_start_time is None:
+            restricted_start_time = current_time
+
+        loitering_duration = current_time - restricted_start_time
+
+        cv2.putText(
+            frame,
+            f"Zone Time: {int(loitering_duration)}s",
+            (50, 170),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.9,
+            (0, 255, 255),
+            2
+        )
+
+        if loitering_duration >= LOITERING_TIME_LIMIT:
+            loitering_alert = True
+
+    else:
+        restricted_start_time = None
+
+    # =====================================================
+    # ALERT HANDLING
+    # =====================================================
 
     if restricted_alert:
         cv2.putText(
@@ -317,14 +392,59 @@ while True:
             save_alert(frame, "Crowd", person_count)
             last_alert_times["Crowd"] = current_time
 
+    if loitering_alert:
+        cv2.putText(
+            frame,
+            "ALERT: Loitering Detected!",
+            (50, 210),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (0, 255, 255),
+            3
+        )
+
+        if current_time - last_alert_times["Loitering"] > cooldown_seconds:
+            save_alert(frame, "Loitering", loitering_duration)
+            last_alert_times["Loitering"] = current_time
+
+    # =====================================================
+    # SOUND STATUS DISPLAY
+    # =====================================================
+
+    sound_status = "MUTED" if sound_muted else "SOUND ON"
+    sound_color = (0, 0, 255) if sound_muted else (0, 255, 0)
+
+    cv2.putText(
+        frame,
+        sound_status,
+        (1050, 50),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        sound_color,
+        2
+    )
+
+    cv2.putText(
+        frame,
+        "Press M to mute/unmute",
+        (980, 80),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.55,
+        (255, 255, 255),
+        2
+    )
+
     # =====================================================
     # SHOW OUTPUT
     # =====================================================
 
     cv2.imshow(window_name, frame)
 
-    # Press q or ESC to quit
     key = cv2.waitKey(1) & 0xFF
+
+    if key == ord("m"):
+        sound_muted = not sound_muted
+        print("Sound muted" if sound_muted else "Sound enabled")
 
     if key == ord("q") or key == 27:
         break
